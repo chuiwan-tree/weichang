@@ -221,8 +221,13 @@ window.addEventListener('resize', fit); fit();
 const toXY = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / cv._s, (e.clientY - r.top) / cv._s]; };
 cv.addEventListener('pointerdown', e => { const [x, y] = toXY(e); click(x, y, e.button === 2); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('pointermove', e => { if (!S.offer) return; const [x, y] = toXY(e); const i = offerAt(x, y);
-  if (i !== S.offerHover){ S.offerHover = i; if (i >= 0) A.preview(S.offer[i]); } });
+cv.addEventListener('pointermove', e => { const [x, y] = toXY(e);
+  if (S.offer){ const i = offerAt(x, y); if (i !== S.offerHover){ S.offerHover = i; if (i >= 0) A.preview(S.offer[i]); } return; }
+  // 手里拿着一个音、指到一格上：把它跟那个方向最近的那只怪一起轻轻唱一下，先听再放
+  const s = S.sel != null ? slotAt(x, y) : null, key = s ? s.k : -1;
+  if (key !== S.hoverK){ S.hoverK = key; if (s){ A.preview(S.hand[S.sel]);
+    const ms = S.mons.filter(m => sectorOf(m.ang) === s.k && m.d < 470).sort((a, b) => a.d - b.d);
+    if (ms.length) A.mon(ms[0].pc, 0.8); } } });
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'h') S.show = !S.show;
@@ -294,7 +299,7 @@ function draw(){
   g.beginPath(); g.arc(CX, CY, 16, 0, Math.PI * 2); g.fillStyle = '#eef'; g.fill();
   // 手里的音
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '12px sans-serif'; g.fillText('手里的音：点一个，再点一格放上去；点格子拿回来，右键收回', CX, HAND_Y - 40);
+  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '12px sans-serif'; g.fillText('手里的音：点一个，指到格子上先听听跟那边的怪合不合，再点下去放；点格子拿回来，右键收回', CX, HAND_Y - 40);
   S.hand.forEach((pc, i) => { const p = handPos(i);
     g.beginPath(); g.arc(p.x, p.y, 21, 0, Math.PI * 2); g.fillStyle = noteColor(pc, 40); g.fill();
     if (S.sel === i){ g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); }
