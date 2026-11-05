@@ -11,7 +11,7 @@ module.exports = async (api) => {
     const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
     A.master = c.createGain(); A.master.gain.value = 0.75; A.master.connect(comp); comp.connect(c.destination);
     const nb = A.noiseBuf = c.createBuffer(1, SR, SR); const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random()*2 - 1;
-    A.ok = function(){ return true; }; window.LOGS = []; for (const nm of ["ally","join","leave","you","mon","bass","tick","spark","clash","pop","lose","hurt","sus","sweet","steady","puff","preview","click"]){ const f = A[nm]; if (!f) continue; A[nm] = function(...a){ let t = this.vt; if (nm === "pop") t += (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0; window.LOGS.push([nm, +t.toFixed(3)]); return f.apply(this, a); }; }
+    A.ok = function(){ return true; }; window.LOGS = []; for (const nm of ["ally","join","leave","you","mon","bass","tick","spark","clash","pop","lose","hurt","sus","sweet","steady","puff","preview","click"]){ const f = A[nm]; if (!f) continue; A[nm] = function(...a){ let t = this.vt; if (nm === "pop" || nm === "join") t += (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0; window.LOGS.push([nm, +t.toFixed(3)]); return f.apply(this, a); }; }
     A.osc = function(type, f, peak, dec, a = 0.005, lp = 0, t0 = 0){
       const t = this.vt + t0, o = c.createOscillator(), g = c.createGain();
       o.type = type; o.frequency.value = f; this.env(g, t, a, peak, dec);

@@ -82,7 +82,8 @@ const A = {
     if (!drag){ this.osc('sine', f, 0.06, 1.7, 0.08); this.osc('triangle', f * 2, 0.018, 1.2, 0.1); this.osc('sine', f * 3, 0.006, 0.8, 0.1); }   // 拖长，四个连成一片和弦
     else { this.osc('sine', f, 0.05, 0.38, 0.02); this.osc('triangle', f * 2, 0.015, 0.28, 0.02); }
     if (drag) this.osc('sine', f * Math.pow(2, 1/12), 0.04, 0.45, 0.02); },
-  join(pc){ if (!this.ok()) return; this.osc('triangle', this.hz(72 + pc), 0.12, 0.5); this.osc('triangle', this.hz(79 + pc), 0.09, 0.6, 0.005, 0, 0.12); this.osc('triangle', this.hz(84 + pc), 0.07, 0.7, 0.005, 0, 0.24); },
+  join(pc){ if (!this.ok()) return; const L = (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0, h = BEAT / 2;   // 收进来那一声等到下一拍，三个音按半拍走
+    this.osc('triangle', this.hz(72 + pc), 0.12, 0.5, 0.005, 0, L); this.osc('triangle', this.hz(79 + pc), 0.09, 0.6, 0.005, 0, L + h); this.osc('triangle', this.hz(84 + pc), 0.07, 0.7, 0.005, 0, L + 2 * h); },
   leave(pc){ if (!this.ok()) return; this.osc('sine', this.hz(72 + pc), 0.08, 0.5); this.osc('sine', this.hz(67 + pc), 0.06, 0.6, 0.005, 0, 0.15); },
   preview(pc){ if (!this.ok()) return; this.osc('triangle', this.hz(72 + pc), 0.18, 0.5); },
 };
@@ -138,7 +139,10 @@ function fireBeat(n){
     let self = 1; for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (value(all[i], all[j]) < 0) self = 0.5;
     if (!notes.length) self *= 0.7;   // 只有它一个在唱，弱一点
     notes = all;
-    S.arcs.push({ k, ang: angOf(k), r: 24, max: S.range, notes, hit: new Set(), blocks: [], self });
+    const arcObj = { k, ang: angOf(k), r: 24, max: S.range, notes, hit: new Set(), blocks: [], self }; S.arcs.push(arcObj);
+    // 这一拍会打中什么，就在这一拍跟你的音一起响一声，波走到的时候不再另响（v4 18:00 那一条，空拍里不再冒碎音）
+    { const ms = S.mons.filter(m => sectorOf(m.ang) === k && m.d < S.range + 20); let best = -9; for (const m of ms) for (const pc of notes) best = Math.max(best, value(pc, m.pc));
+      if (best >= 1){ A.spark(best >= 2 ? 2 : 1, notes[0]); } arcObj.fb = 1; }
     S.slotFlash[k] = 1;
   }
 }
@@ -171,7 +175,7 @@ function hitMon(a, m){
     v *= S.power; m.hp -= v; m.kb += 26 * v; m.hitT = 0.2; S.stat[kindOf(best)]++;
     m.last = kindOf(best); if (best >= 2) m.sw = (m.sw || 0) + 1;
     S.fx.push({ type: 'spark', x, y, t: 0.35, v, kind: kindOf(best) });
-    A.spark(v, a.notes[0]);
+    if (!a.fb) A.spark(v, a.notes[0]);
   }
 }
 
@@ -203,7 +207,7 @@ function step(dt){
     m.d += (m.kb * 7 - sp) * dt; m.kb *= Math.exp(-7 * dt);
     m.ang += m.w * dt; m.rage -= dt; m.sing -= dt; m.hitT -= dt;
     const mk = sectorOf(m.ang);
-    if (m.hp <= 0 && !m.dead && m.last === '甜' && (m.sw || 0) >= 2 && !S.allies[mk] && !window.NO_RECRUIT && S.allies.filter(Boolean).length < (window.MAXA_T || MAXA)){
+    if (m.hp <= 0 && !m.dead && m.last === '甜' && (m.sw || 0) >= (S.recruits === 0 ? 1 : 2) &&   /* 第一个声部来得快一点：开头不用一个人唱那么久 */ !S.allies[mk] && !window.NO_RECRUIT && S.allies.filter(Boolean).length < (window.MAXA_T || MAXA)){
       m.dead = true; S.kills++; S.xp++; S.recruits++;
       S.allies[mk] = { pc: m.pc, drag: allyDrag(m.pc), sing: 0, born: S.t };
       S.fx.push({ type: 'join', fx: CX + Math.cos(m.ang)*m.d, fy: CY + Math.sin(m.ang)*m.d, k: mk, t: 0.6, pc: m.pc }); A.join(m.pc);
