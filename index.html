@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>围唱</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;background:#0d0f14;color:#ddd;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden;height:100%}
+canvas{display:block;margin:0 auto;touch-action:none}
+</style></head><body><canvas id="c"></canvas>
+<script>
+// 围唱：唱歌的幸存者，最小原型。吹万，第 11 天。
+// 怪在哪个方向，就在哪一拍唱；你那一格也在那一拍唱、朝那边推一道波。合上才打得动。
+const W = 800, H = 880, CX = 400, CY = 410;
+const BEATS = 8, BEAT = 0.3, SECTION_LOOPS = 8, TOTAL_SECTIONS = 12;
+const NAMES = ['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
+const SCALE = [0,2,4,5,7,9,11];
+const CHORDS = [{n:'C',r:0,p:[0,4,7]},{n:'Am',r:9,p:[9,0,4]},{n:'F',r:5,p:[5,9,0]},{n:'G',r:7,p:[7,11,2]},
+                {n:'Em',r:4,p:[4,7,11]},{n:'Dm',r:2,p:[2,5,9]},{n:'F',r:5,p:[5,9,0]},{n:'G',r:7,p:[7,11,2]}];
+const IN0 = 50, IN1 = 84, OUT0 = 88, OUT1 = 120;   // 两圈格子
+const HALF = Math.PI / 8 * 1.05;                     // 一道波的半宽
+const WAVE_V = 650;
+const iv = (a, b) => ((a - b) % 12 + 12) % 12;
+function value(pc, mpc){            // 你的音打在它的音上值多少
+  const i = iv(pc, mpc);
+  if (i===3||i===4||i===8||i===9) return 2;     // 三度六度：甜
+  if (i===0||i===5||i===7) return 1;            // 同音、四五度：稳
+  if (i===2||i===10) return 0;                  // 大二小七：软，穿过去什么也没有
+  return -1;                                    // 小二、三全音、大七：撞
+}
+function kindOf(v){ return v>=2?'甜':v>=1?'稳':v>=0?'软':'撞'; }
+const hue = pc => (pc * 7 % 12) * 30;           // 五度圈排颜色：挨着的颜色是五度
+const angOf = k => -Math.PI/2 + k * Math.PI/4;
+const sectorOf = a => ((Math.round((a + Math.PI/2) / (Math.PI/4)) % 8) + 8) % 8;
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI; return d; };
+function rng32(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+// ---------------- 声音 ----------------
+const A = {
+  ctx: null, master: null, muted: false, noiseBuf: null,
+  init(){
+    if (this.ctx) return;
+    const c = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+    this.master = c.createGain(); this.master.gain.value = 0.75; this.master.connect(comp); comp.connect(c.destination);
+    const b = this.noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random()*2 - 1;
+  },
+  ok(){ return this.ctx && !this.muted && !window.TEST; },
+  hz: m => 440 * Math.pow(2, (m - 69) / 12),
+  env(g, t, a, peak, dec){ g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak,0.0002), t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); },
+  osc(type, f, peak, dec, a = 0.005, lp = 0, t0 = 0){
+    const c = this.ctx, t = c.currentTime + t0, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = f; this.env(g, t, a, peak, dec);
+    let n = o; if (lp){ const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lp; o.connect(fl); n = fl; }
+    n.connect(g); g.connect(this.master); o.start(t); o.stop(t + a + dec + 0.05);
+  },
+  noise(peak, dec, type, f, q = 1){
+    const c = this.ctx, t = c.currentTime, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.noiseBuf; fl.type = type; fl.frequency.value = f; fl.Q.value = q; this.env(g, t, 0.002, peak, dec);
+    s.connect(fl); fl.connect(g); g.connect(this.master); s.start(t, Math.random()*0.5); s.stop(t + dec + 0.05);
+  },
+  you(pc, n){ if (!this.ok()) return; const f = this.hz(72 + pc), k = n > 1 ? 0.7 : 1;
+    this.osc('triangle', f, 0.2*k, 0.55); this.osc('sine', f*2, 0.05*k, 0.25); },
+  mon(pc, v){ if (!this.ok()) return; this.osc('sawtooth', this.hz(60 + pc), 0.09*v, 0.32, 0.025, 1200); },
+  bass(r){ if (!this.ok()) return; this.osc('sine', this.hz(36 + r), 0.28, 0.6, 0.01); this.osc('triangle', this.hz(48 + r), 0.05, 0.3); },
+  tick(acc){ if (!this.ok()) return; this.noise(acc ? 0.05 : 0.02, 0.03, 'highpass', 7000); },
+  spark(v){ if (!this.ok()) return; this.osc('sine', 1800 + Math.random()*600, 0.02*v, 0.08); },
+  clash(){ if (!this.ok()) return; this.noise(0.22, 0.16, 'bandpass', 380, 2); this.osc('sawtooth', 70, 0.08, 0.15, 0.003, 600); },
+  pop(pc){ if (!this.ok()) return; this.osc('sine', this.hz(84 + pc), 0.07, 0.45); this.osc('sine', this.hz(91 + pc), 0.035, 0.35, 0.005, 0, 0.04); },
+  hurt(){ if (!this.ok()) return; this.osc('sine', 55, 0.5, 0.35, 0.003); this.noise(0.15, 0.2, 'lowpass', 300); },
+  preview(pc){ if (!this.ok()) return; this.osc('triangle', this.hz(72 + pc), 0.18, 0.5); },
+};
+
+// ---------------- 局面 ----------------
+let S;
+function reset(seed){
+  S = { t: 0, rng: rng32(seed ?? (Date.now() % 1e9)), beatN: 0, nextT: 0.05, sec: 0, chord: CHORDS[0],
+    inner: Array(8).fill(null), outer: Array(8).fill(null), outerOpen: false,
+    hand: [0, 4, 7], sel: null, mons: [], arcs: [], fx: [], slotFlash: Array(8).fill(0),
+    hp: 6, maxhp: 6, xp: 0, lvl: 1, need: 2, kills: 0, offer: null, over: false, won: false,
+    spawnAcc: 0.6, started: false, paused: false, show: false, msg: '', msgT: 0, nid: 1, range: 290,
+    stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [] };
+}
+function say(m, t = 3){ S.msg = m; S.msgT = t; }
+
+function fireBeat(n){
+  const k = n % 8, loop = Math.floor(n / 8), sec = Math.floor(loop / SECTION_LOOPS);
+  if (sec >= TOTAL_SECTIONS){ S.over = true; S.won = true; return; }
+  if (sec !== S.sec){ S.sec = sec; S.chord = CHORDS[sec % CHORDS.length]; }
+  A.tick(k % 4 === 0);
+  if (k === 0 || k === 4) A.bass(S.chord.r);
+  // 这一拍方向上的怪唱
+  const sing = {};
+  for (const m of S.mons) if (sectorOf(m.ang) === k && m.d < 470){
+    const v = Math.max(0.15, 1 - m.d / 470); sing[m.pc] = Math.min(1.2, (sing[m.pc] || 0) + v); m.sing = 0.25; }
+  for (const pc in sing) A.mon(+pc, sing[pc]);
+  // 你的那一格
+  const notes = [S.inner[k], S.outer[k]].filter(x => x != null);
+  S.song.push(notes.slice());
+  if (notes.length){
+    notes.forEach(pc => A.you(pc, notes.length));
+    let self = 1; if (notes.length === 2 && value(notes[0], notes[1]) < 0) self = 0.5;
+    S.arcs.push({ k, ang: angOf(k), r: 24, max: S.range, notes, hit: new Set(), blocks: [], self });
+    S.slotFlash[k] = 1;
+  }
+}
+
+function spawnPack(){
+  const R = S.rng, sec = S.sec, ch = S.chord;
+  const n = 1 + Math.floor(R() * (1 + Math.min(3, sec / 2)));
+  const pc = ch.p[Math.floor(R() * ch.p.length)];
+  const ang = R() * Math.PI * 2;
+  const w = sec >= 4 && R() < 0.3 ? (R() < 0.5 ? -1 : 1) * (0.06 + R()*0.06) : 0;
+  for (let i = 0; i < n; i++){
+    S.mons.push({ id: S.nid++, pc, ang: ang + (R() - 0.5) * 0.14, d: 450 + i * 24, hp: 2 + sec * 0.4, maxhp: 2 + sec * 0.4,
+      v: 24 + sec * 2.2 + R() * 6, w, rad: 11, kb: 0, rage: 0, sing: 0, hitT: 0 });
+  }
+}
+
+function hitMon(a, m){
+  let v = 0, best = -9;
+  for (const pc of a.notes){ const x = value(pc, m.pc); v += x; best = Math.max(best, x); }
+  v *= a.self;
+  const x = CX + Math.cos(m.ang) * m.d, y = CY + Math.sin(m.ang) * m.d;
+  if (v === 0){ S.stat.软++; S.fx.push({ type: 'fizz', x, y, t: 0.3 }); return; }
+  if (v < 0){
+    a.blocks.push({ ang: m.ang, w: Math.atan2(m.rad * 1.8, m.d) });
+    m.rage = 2; S.stat.撞++; m.hp = Math.min(m.maxhp * 1.5, m.hp + 0.5);
+    S.fx.push({ type: 'shatter', x, y, t: 0.45, ang: a.ang });
+    A.clash();
+  } else {
+    m.hp -= v; m.kb += 26 * v; m.hitT = 0.2; S.stat[kindOf(best)]++;
+    S.fx.push({ type: 'spark', x, y, t: 0.35, v, kind: kindOf(best) });
+    A.spark(v);
+  }
+}
+
+function step(dt){
+  if (!S.started || S.over || S.offer || S.paused) return;
+  S.t += dt;
+  while (S.t >= S.nextT && !S.over){ fireBeat(S.beatN); S.beatN++; S.nextT += BEAT; }
+  if (S.over) return;
+  // 出怪
+  const rate = 0.32 + 0.085 * S.sec;
+  S.spawnAcc += rate * dt;
+  while (S.spawnAcc >= 1){ S.spawnAcc -= 1; spawnPack(); }
+  // 波
+  for (const a of S.arcs){
+    a.r += WAVE_V * dt;
+    for (const m of S.mons){
+      if (a.hit.has(m.id) || m.d - m.rad > a.r) continue;
+      if (Math.abs(angDiff(m.ang, a.ang)) > HALF + m.rad / Math.max(m.d, 20)) continue;
+      a.hit.add(m.id);
+      if (a.blocks.some(b => Math.abs(angDiff(m.ang, b.ang)) < b.w)) continue;
+      hitMon(a, m);
+    }
+  }
+  S.arcs = S.arcs.filter(a => a.r < a.max);
+  // 怪
+  for (const m of S.mons){
+    const sp = m.v * (m.rage > 0 ? 1.75 : 1);
+    m.d += (m.kb * 7 - sp) * dt; m.kb *= Math.exp(-7 * dt);
+    m.ang += m.w * dt; m.rage -= dt; m.sing -= dt; m.hitT -= dt;
+    if (m.hp <= 0 && !m.dead){ m.dead = true; S.kills++; S.xp++;
+      S.fx.push({ type: 'pop', x: CX + Math.cos(m.ang)*m.d, y: CY + Math.sin(m.ang)*m.d, t: 0.5, pc: m.pc }); A.pop(m.pc); }
+    else if (m.d < 22 && !m.dead){ m.dead = true; S.hp--; S.fx.push({ type: 'hurt', t: 0.4 }); A.hurt();
+      if (S.hp <= 0){ S.over = true; } }
+  }
+  S.mons = S.mons.filter(m => !m.dead);
+  for (const f of S.fx) f.t -= dt; S.fx = S.fx.filter(f => f.t > 0);
+  for (let k = 0; k < 8; k++) S.slotFlash[k] = Math.max(0, S.slotFlash[k] - dt * 4);
+  if (S.msgT > 0) S.msgT -= dt;
+  // 升级
+  if (S.xp >= S.need && !S.over){
+    S.xp -= S.need; S.lvl++; S.need = 2 + S.lvl * 2; S.range = Math.min(380, S.range + 10);
+    if (S.lvl === 4){ S.outerOpen = true; say('外圈开了：一拍可以唱两个音。两个音自己撞了，波减半', 5); }
+    const pool = SCALE.slice(); const pick = [];
+    while (pick.length < 3){ const i = Math.floor(S.rng() * pool.length); pick.push(pool.splice(i, 1)[0]); }
+    S.offer = pick; S.offerHover = -1;
+  }
+}
+
+// ---------------- 手：点 ----------------
+function slotAt(x, y){
+  const dx = x - CX, dy = y - CY, r = Math.hypot(dx, dy);
+  const k = sectorOf(Math.atan2(dy, dx));
+  if (r >= IN0 && r < IN1 + 2) return { ring: 'inner', k };
+  if (S.outerOpen && r >= OUT0 - 2 && r < OUT1) return { ring: 'outer', k };
+  return null;
+}
+const HAND_Y = 832;
+function handPos(i){ const n = Math.max(S.hand.length, 1); return { x: CX + (i - (n - 1) / 2) * 56, y: HAND_Y }; }
+function handAt(x, y){ for (let i = 0; i < S.hand.length; i++){ const p = handPos(i); if (Math.hypot(x - p.x, y - p.y) < 24) return i; } return -1; }
+function offerPos(i){ return { x: CX + (i - 1) * 150, y: CY }; }
+function offerAt(x, y){ if (!S.offer) return -1; for (let i = 0; i < 3; i++){ const p = offerPos(i); if (Math.abs(x - p.x) < 60 && Math.abs(y - p.y) < 75) return i; } return -1; }
+
+function click(x, y, right){
+  A.init(); if (A.ctx.state === 'suspended') A.ctx.resume();
+  if (!S.started){ S.started = true; return; }
+  if (S.over){ reset(); S.started = true; return; }
+  if (S.offer){ const i = offerAt(x, y); if (i >= 0){ S.hand.push(S.offer[i]); S.offer = null; } return; }
+  const h = handAt(x, y);
+  if (h >= 0){ S.sel = S.sel === h ? null : h; A.preview(S.hand[h]); return; }
+  const s = slotAt(x, y);
+  if (s){
+    const ring = S[s.ring], cur = ring[s.k];
+    if (right){ if (cur != null){ S.hand.push(cur); ring[s.k] = null; } S.sel = null; return; }
+    if (S.sel != null){ const pc = S.hand[S.sel]; S.hand.splice(S.sel, 1); ring[s.k] = pc; if (cur != null) S.hand.push(cur); S.sel = null; }
+    else if (cur != null){ S.hand.push(cur); ring[s.k] = null; S.sel = S.hand.length - 1; }
+    return;
+  }
+  S.sel = null;
+}
+
+// ---------------- 画 ----------------
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+function fit(){
+  const dpr = window.devicePixelRatio || 1, s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px'; cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); cv._s = s;
+}
+window.addEventListener('resize', fit); fit();
+const toXY = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / cv._s, (e.clientY - r.top) / cv._s]; };
+cv.addEventListener('pointerdown', e => { const [x, y] = toXY(e); click(x, y, e.button === 2); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointermove', e => { if (!S.offer) return; const [x, y] = toXY(e); const i = offerAt(x, y);
+  if (i !== S.offerHover){ S.offerHover = i; if (i >= 0) A.preview(S.offer[i]); } });
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'h') S.show = !S.show;
+  if (k === 'm'){ A.muted = !A.muted; say(A.muted ? '静音了：现在只靠眼睛，还打得过吗' : '声音回来了'); }
+  if (k === 'r'){ reset(); S.started = true; }
+  if (k === ' '){ S.paused = !S.paused; e.preventDefault(); }
+});
+
+function annular(r0, r1, a0, a1){ g.beginPath(); g.arc(CX, CY, r1, a0, a1); g.arc(CX, CY, r0, a1, a0, true); g.closePath(); }
+function noteColor(pc, l = 60, a = 1){ return `hsla(${hue(pc)},70%,${l}%,${a})`; }
+
+function draw(){
+  g.fillStyle = '#0d0f14'; g.fillRect(0, 0, W, H);
+  const hurt = S.fx.find(f => f.type === 'hurt');
+  if (hurt){ g.fillStyle = `rgba(160,20,30,${hurt.t * 0.5})`; g.fillRect(0, 0, W, H); }
+  // 八个方向的淡线、射程
+  g.strokeStyle = 'rgba(255,255,255,0.04)'; g.lineWidth = 1;
+  for (let k = 0; k < 8; k++){ const a = angOf(k) + Math.PI / 8; g.beginPath(); g.moveTo(CX + Math.cos(a) * IN0, CY + Math.sin(a) * IN0); g.lineTo(CX + Math.cos(a) * 460, CY + Math.sin(a) * 460); g.stroke(); }
+  g.beginPath(); g.arc(CX, CY, S.range, 0, Math.PI * 2); g.strokeStyle = 'rgba(255,255,255,0.06)'; g.setLineDash([4, 8]); g.stroke(); g.setLineDash([]);
+  // 波
+  for (const a of S.arcs){
+    const al = 1 - a.r / a.max;
+    const col = a.notes.length === 1 ? noteColor(a.notes[0], 70, al) : `rgba(255,240,200,${al})`;
+    g.strokeStyle = col; g.lineWidth = 3 + 3 * al;
+    const bl = a.blocks.map(b => [angDiff(b.ang, a.ang) - b.w, angDiff(b.ang, a.ang) + b.w]).sort((p, q) => p[0] - q[0]);
+    let from = -HALF;
+    for (const [b0, b1] of bl.concat([[HALF, HALF]])){
+      if (b0 > from){ g.beginPath(); g.arc(CX, CY, a.r, a.ang + from, a.ang + Math.min(b0, HALF)); g.stroke(); }
+      from = Math.max(from, b1);
+    }
+  }
+  // 怪
+  for (const m of S.mons){
+    const x = CX + Math.cos(m.ang) * m.d, y = CY + Math.sin(m.ang) * m.d;
+    if (m.sing > 0){ g.beginPath(); g.arc(x, y, m.rad + 4 + (0.25 - m.sing) * 30, 0, Math.PI * 2); g.strokeStyle = `rgba(220,220,255,${m.sing * 1.6})`; g.lineWidth = 1.5; g.stroke(); }
+    g.beginPath(); g.arc(x, y, m.rad, 0, Math.PI * 2);
+    g.fillStyle = m.hitT > 0 ? '#fff' : m.rage > 0 ? '#c04848' : (S.show ? noteColor(m.pc, 45) : '#7d8796'); g.fill();
+    // 嘴：唱的时候张开
+    const mo = m.sing > 0 ? 5 : 1.5, fa = m.ang + Math.PI;
+    g.fillStyle = '#0d0f14'; g.beginPath(); g.ellipse(x + Math.cos(fa) * 5, y + Math.sin(fa) * 5, 3.2, mo, fa, 0, Math.PI * 2); g.fill();
+    if (m.hp < m.maxhp){ g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(x - 10, y - m.rad - 6, 20 * Math.max(0, m.hp / m.maxhp), 2); }
+    if (S.show){ g.fillStyle = '#fff'; g.font = '10px sans-serif'; g.textAlign = 'center'; g.fillText(NAMES[m.pc], x, y - m.rad - 9); }
+  }
+  // 效果
+  for (const f of S.fx){
+    if (f.type === 'spark'){ const c = f.kind === '甜' ? '255,215,120' : f.kind === '稳' ? '230,240,255' : '150,150,160';
+      g.beginPath(); g.arc(f.x, f.y, 6 + (0.35 - f.t) * 60 * (f.v / 2), 0, Math.PI * 2); g.strokeStyle = `rgba(${c},${f.t * 2.5})`; g.lineWidth = 2; g.stroke(); }
+    if (f.type === 'shatter'){ g.strokeStyle = `rgba(255,70,70,${f.t * 2})`; g.lineWidth = 2;
+      for (let i = 0; i < 6; i++){ const a = i * 1.047 + f.t * 3, r0 = 6, r1 = 10 + (0.45 - f.t) * 40;
+        g.beginPath(); g.moveTo(f.x + Math.cos(a) * r0, f.y + Math.sin(a) * r0); g.lineTo(f.x + Math.cos(a + 0.3) * r1, f.y + Math.sin(a + 0.3) * r1); g.stroke(); } }
+    if (f.type === 'fizz'){ g.fillStyle = `rgba(150,150,160,${f.t * 2})`; for (let i = 0; i < 4; i++) g.fillRect(f.x + Math.cos(i*1.6+f.t*9)*9, f.y + Math.sin(i*1.6+f.t*9)*9, 2, 2); }
+    if (f.type === 'pop'){ g.beginPath(); g.arc(f.x, f.y, (0.5 - f.t) * 70, 0, Math.PI * 2); g.strokeStyle = noteColor(f.pc, 75, f.t * 1.6); g.lineWidth = 2; g.stroke(); }
+  }
+  // 两圈格子
+  const rings = [['inner', IN0, IN1]]; if (S.outerOpen) rings.push(['outer', OUT0, OUT1]);
+  for (const [ring, r0, r1] of rings) for (let k = 0; k < 8; k++){
+    const a0 = angOf(k) - Math.PI / 8 + 0.03, a1 = angOf(k) + Math.PI / 8 - 0.03, pc = S[ring][k];
+    annular(r0, r1, a0, a1);
+    g.fillStyle = pc == null ? 'rgba(255,255,255,0.05)' : noteColor(pc, 35 + S.slotFlash[k] * 30, 0.9); g.fill();
+    g.strokeStyle = S.sel != null ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)'; g.lineWidth = 1; g.stroke();
+    if (pc != null){ const rm = (r0 + r1) / 2, a = angOf(k); g.fillStyle = '#fff'; g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(NAMES[pc], CX + Math.cos(a) * rm, CY + Math.sin(a) * rm); }
+  }
+  if (!S.outerOpen){ g.beginPath(); g.arc(CX, CY, (OUT0 + OUT1) / 2, 0, Math.PI * 2); g.strokeStyle = 'rgba(255,255,255,0.04)'; g.lineWidth = OUT1 - OUT0; g.stroke(); }
+  // 指针
+  const ph = angOf(0) + ((S.t - S.nextT) / BEAT + S.beatN) * Math.PI / 4;
+  g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 2; g.beginPath(); g.moveTo(CX + Math.cos(ph) * 30, CY + Math.sin(ph) * 30); g.lineTo(CX + Math.cos(ph) * (S.outerOpen ? OUT1 + 6 : IN1 + 6), CY + Math.sin(ph) * (S.outerOpen ? OUT1 + 6 : IN1 + 6)); g.stroke();
+  // 你
+  g.beginPath(); g.arc(CX, CY, 16, 0, Math.PI * 2); g.fillStyle = '#eef'; g.fill();
+  // 手里的音
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '12px sans-serif'; g.fillText('手里的音：点一个，再点一格放上去；点格子拿回来，右键收回', CX, HAND_Y - 40);
+  S.hand.forEach((pc, i) => { const p = handPos(i);
+    g.beginPath(); g.arc(p.x, p.y, 21, 0, Math.PI * 2); g.fillStyle = noteColor(pc, 40); g.fill();
+    if (S.sel === i){ g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); }
+    g.fillStyle = '#fff'; g.font = 'bold 16px sans-serif'; g.fillText(NAMES[pc], p.x, p.y); });
+  // 顶上
+  g.textAlign = 'left'; g.font = '14px sans-serif'; g.fillStyle = '#ccd';
+  const sec = Math.floor(S.t / 60), ss = Math.floor(S.t % 60);
+  g.fillText('心 ' + '●'.repeat(Math.max(0, S.hp)) + '○'.repeat(Math.max(0, S.maxhp - S.hp)), 20, 26);
+  g.fillText(`${sec}:${String(ss).padStart(2, '0')}   第 ${S.sec + 1}/${TOTAL_SECTIONS} 段   ${S.lvl} 级   打散 ${S.kills}`, 20, 50);
+  g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(20, 62, 200, 4); g.fillStyle = '#9cf'; g.fillRect(20, 62, 200 * S.xp / S.need, 4);
+  g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,0.3)'; g.font = '12px sans-serif';
+  g.fillText('M 静音  H 显示怪的音  空格 停  R 重来', W - 20, 26);
+  if (A.muted){ g.fillStyle = '#f88'; g.fillText('静音中', W - 20, 46); }
+  if (S.show){ g.fillStyle = '#fc8'; g.fillText('怪唱的和弦：' + S.chord.n, W - 20, 66); }
+  if (S.msgT > 0){ g.textAlign = 'center'; g.fillStyle = `rgba(255,240,200,${Math.min(1, S.msgT)})`; g.font = '15px sans-serif'; g.fillText(S.msg, CX, 92); }
+  // 盖着的几层
+  if (!S.started) cover(['围唱', '', '怪唱着歌从四面八方走过来。', '你身边一圈 8 格，就是 8 拍，指针转到哪一拍，那一格的音就响，', '同时朝那个方向推一道波。那个方向上的怪也正好在这一拍唱。', '合得上，波打得动它、推得开它；撞了，波碎在它身上，它还发狂。', '每过一阵，怪唱的就换一个和弦。', '', '戴耳机。点一下开始。']);
+  if (S.offer){ g.fillStyle = 'rgba(8,10,14,0.75)'; g.fillRect(0, 0, W, H); g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = '18px sans-serif';
+    g.fillText(`${S.lvl} 级：挑一个音（指上去听一下）`, CX, CY - 120);
+    S.offer.forEach((pc, i) => { const p = offerPos(i); g.fillStyle = noteColor(pc, S.offerHover === i ? 50 : 35); g.fillRect(p.x - 55, p.y - 70, 110, 140);
+      g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.fillText(NAMES[pc], p.x, p.y); }); }
+  if (S.over){ const t = `${Math.floor(S.t / 60)}:${String(Math.floor(S.t % 60)).padStart(2, '0')}`, st = S.stat;
+    cover([S.won ? '唱完了' : '被围住了', '', `撑了 ${t}，打散 ${S.kills} 只，${S.lvl} 级`, `波打上去：甜 ${st.甜}  稳 ${st.稳}  软 ${st.软}  撞 ${st.撞}`, '', '点一下或 R 重来']); }
+}
+function cover(lines){ g.fillStyle = 'rgba(8,10,14,0.82)'; g.fillRect(0, 0, W, H); g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach((l, i) => { g.fillStyle = i === 0 ? '#fff' : '#bbc'; g.font = i === 0 ? 'bold 34px sans-serif' : '16px sans-serif'; g.fillText(l, CX, CY - 150 + i * 32); }); }
+
+let last = performance.now();
+function frame(now){ const dt = Math.min(0.05, (now - last) / 1000); last = now; if (!window.TEST) step(dt); draw(); requestAnimationFrame(frame); }
+reset(); requestAnimationFrame(frame);
+</script></body></html>
