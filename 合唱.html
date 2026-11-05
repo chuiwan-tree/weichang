@@ -67,14 +67,17 @@ const A = {
     s.buffer = this.noiseBuf; fl.type = type; fl.frequency.value = f; fl.Q.value = q; this.env(g, t, 0.002, peak, dec);
     s.connect(fl); fl.connect(g); g.connect(this.master); s.start(t, Math.random()*0.5); s.stop(t + dec + 0.05);
   },
-  you(pc, n){ if (!this.ok()) return; const f = this.hz(72 + pc), k = n > 1 ? 0.7 : 1;
-    this.osc('triangle', f, 0.2*k, 0.55); this.osc('sine', f*2, 0.05*k, 0.25); },
+  you(pc, n){ if (!this.ok()) return; const f = this.hz(72 + pc), k = (n > 1 ? 0.7 : 1) * (S.beatN % 4 === 0 ? 1 : 0.8) * (0.9 + 0.1 * Math.random());   // 23:29 丙：重拍响、别的拍轻一点，每下略有不同（耳朵说高音每回一样响、像报错声）
+    this.osc('triangle', f, 0.2*k, 0.55, 0.008, 2800); this.osc('sine', f*2, 0.03*k, 0.25); },
   mon(pc, v){ if (!this.ok()) return; this.osc('sawtooth', this.hz(60 + pc), 0.09*v, 0.32, 0.025, 1200); },
   bass(r){ if (!this.ok()) return; this.osc('sine', this.hz(36 + r), 0.28, 0.6, 0.01); this.osc('triangle', this.hz(48 + r), 0.05, 0.3); },
   tick(acc){ if (!this.ok()) return; this.noise(acc ? 0.05 : 0.02, 0.03, 'highpass', 7000); },
   spark(v, pc){ if (!this.ok()) return; this.osc('sine', this.hz(84 + (pc ?? 0)), 0.008 * Math.min(v, 2), 0.1); },   // 打中：轻、跟着你的音，不再是乱跳的高音（合唱版 18:18 听出来抢旋律）
   clash(){ if (!this.ok()) return; this.noise(0.22, 0.16, 'bandpass', 380, 2); this.osc('sawtooth', 70, 0.08, 0.15, 0.003, 600); },
-  pop(pc){ if (!this.ok()) return; this.osc('sine', this.hz(84 + pc), 0.07, 0.45); this.osc('sine', this.hz(91 + pc), 0.035, 0.35, 0.005, 0, 0.04); },
+  pop(pc){ if (!this.ok()) return; const L = (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0;   // 打散的那一声等到下一拍（v4 有、合唱漏了：11-05 23:25 丙查出来，2:00 那一撮一撮碎音就是它）
+    const b = S.beatN; if (this.popB !== b){ this.popB = b; this.popSeen = new Set(); }   // 同一拍里同一个音只响一次；几只一起散，后面的越来越轻
+    if (this.popSeen.size) return; this.popSeen.add(pc); const k = 1;   // 23:29 丙：一拍只响第一只（2:00 以后一拍散好几只，七八个音挤一起像卡顿）
+    this.osc('sine', this.hz(72 + pc), 0.05 * k, 0.5, 0.005, 0, L); this.osc('sine', this.hz(79 + pc), 0.025 * k, 0.4, 0.005, 0, L); },
   lose(pc){ if (!this.ok()) return; const f = this.hz(72 + pc); this.osc('triangle', f, 0.18, 0.7, 0.005, 900); this.osc('triangle', f * 0.94, 0.14, 0.7, 0.005, 700); this.noise(0.08, 0.25, 'lowpass', 500); },
   hurt(){ if (!this.ok()) return; this.osc('sine', 55, 0.5, 0.35, 0.003); this.noise(0.15, 0.2, 'lowpass', 300); },
   ally(pc, drag, idle){ if (!this.ok()) return; const f = this.hz(60 + pc);   // 收过来的声部：低一个八度、软，垫在你的旋律底下；闲着的只轻轻哼
@@ -83,7 +86,7 @@ const A = {
     else { this.osc('sine', f, 0.05, 0.38, 0.02); this.osc('triangle', f * 2, 0.015, 0.28, 0.02); }
     if (drag) this.osc('sine', f * Math.pow(2, 1/12), 0.04, 0.45, 0.02); },
   join(pc){ if (!this.ok()) return; const L = (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0, h = BEAT / 2;   // 收进来那一声等到下一拍，三个音按半拍走
-    this.osc('triangle', this.hz(72 + pc), 0.12, 0.5, 0.005, 0, L); this.osc('triangle', this.hz(79 + pc), 0.09, 0.6, 0.005, 0, L + h); this.osc('triangle', this.hz(84 + pc), 0.07, 0.7, 0.005, 0, L + 2 * h); },
+    this.osc('triangle', this.hz(72 + pc), 0.09, 0.5, 0.005, 2400, L); this.osc('triangle', this.hz(79 + pc), 0.065, 0.6, 0.005, 2400, L + h); this.osc('triangle', this.hz(84 + pc), 0.045, 0.7, 0.005, 2400, L + 2 * h); },   // 23:29 丙：收进来那三连音轻一点、削掉尖的
   leave(pc){ if (!this.ok()) return; this.osc('sine', this.hz(72 + pc), 0.08, 0.5); this.osc('sine', this.hz(67 + pc), 0.06, 0.6, 0.005, 0, 0.15); },
   preview(pc){ if (!this.ok()) return; this.osc('triangle', this.hz(72 + pc), 0.18, 0.5); },
 };
