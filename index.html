@@ -249,9 +249,9 @@ function draw(){
   g.beginPath(); g.arc(CX, CY, S.range, 0, Math.PI * 2); g.strokeStyle = 'rgba(255,255,255,0.06)'; g.setLineDash([4, 8]); g.stroke(); g.setLineDash([]);
   // 波
   for (const a of S.arcs){
-    const al = 1 - a.r / a.max;
-    const col = a.notes.length === 1 ? noteColor(a.notes[0], 70, al) : `rgba(255,240,200,${al})`;
-    g.strokeStyle = col; g.lineWidth = 3 + 3 * al;
+    const al = 0.25 + 0.75 * (1 - a.r / a.max);
+    const col = a.notes.length === 1 ? noteColor(a.notes[0], 72, al) : `rgba(255,240,200,${al})`;
+    g.strokeStyle = col; g.lineWidth = 5 + 6 * al; g.lineCap = 'round';
     const bl = a.blocks.map(b => [angDiff(b.ang, a.ang) - b.w, angDiff(b.ang, a.ang) + b.w]).sort((p, q) => p[0] - q[0]);
     let from = -HALF;
     for (const [b0, b1] of bl.concat([[HALF, HALF]])){
