@@ -78,9 +78,23 @@ function reset(seed){
     hand: [0, 4, 7], sel: null, mons: [], arcs: [], fx: [], slotFlash: Array(8).fill(0),
     hp: 6, maxhp: 6, xp: 0, lvl: 1, need: 2, kills: 0, offer: null, over: false, won: false,
     spawnAcc: 0.6, started: false, paused: false, show: false, msg: '', msgT: 0, nid: 1, range: 290,
-    stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [] };
+    stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [], secSong: [], playing: -1 };
 }
 function say(m, t = 3){ S.msg = m; S.msgT = t; }
+// 一局打完：每一段最后那一圈，按段连起来放一遍，就是你这一局唱的歌
+function playSong(){
+  A.init(); if (A.ctx.state === 'suspended') A.ctx.resume();
+  const secs = S.secSong.filter(Boolean); if (!secs.length) return;
+  let i = 0; const me = S;
+  (function next(){
+    if (S !== me || i >= secs.length * 8){ me.playing = -1; return; }
+    const sec = secs[Math.floor(i / 8)], k = i % 8; me.playing = Math.floor(i / 8);
+    if (k === 0 || k === 4) A.bass(sec.r);
+    A.tick(k % 4 === 0);
+    const ns = [sec.inner[k], sec.outer[k]].filter(x => x != null); ns.forEach(pc => A.you(pc, ns.length));
+    me.slotFlash[k] = 1; i++; setTimeout(next, BEAT * 1000);
+  })();
+}
 
 function fireBeat(n){
   const k = n % 8, loop = Math.floor(n / 8), sec = Math.floor(loop / SECTION_LOOPS);
@@ -96,6 +110,7 @@ function fireBeat(n){
   // 你的那一格
   const notes = [S.inner[k], S.outer[k]].filter(x => x != null);
   S.song.push(notes.slice());
+  if (k === 7) S.secSong[sec] = { r: S.chord.r, inner: S.inner.slice(), outer: S.outer.slice() };
   if (notes.length){
     notes.forEach(pc => A.you(pc, notes.length));
     let self = 1; if (notes.length === 2 && value(notes[0], notes[1]) < 0) self = 0.5;
@@ -233,7 +248,7 @@ window.addEventListener('keydown', e => {
   if (k === 'h') S.show = !S.show;
   if (k === 'm'){ A.muted = !A.muted; say(A.muted ? '静音了：现在只靠眼睛，还打得过吗' : '声音回来了'); }
   if (k === 'r'){ reset(); S.started = true; }
-  if (k === ' '){ S.paused = !S.paused; e.preventDefault(); }
+  if (k === ' '){ e.preventDefault(); if (S.over){ if (S.playing < 0) playSong(); } else S.paused = !S.paused; }
 });
 
 function annular(r0, r1, a0, a1){ g.beginPath(); g.arc(CX, CY, r1, a0, a1); g.arc(CX, CY, r0, a1, a0, true); g.closePath(); }
@@ -322,7 +337,7 @@ function draw(){
     S.offer.forEach((pc, i) => { const p = offerPos(i); g.fillStyle = noteColor(pc, S.offerHover === i ? 50 : 35); g.fillRect(p.x - 55, p.y - 70, 110, 140);
       g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.fillText(NAMES[pc], p.x, p.y); }); }
   if (S.over){ const t = `${Math.floor(S.t / 60)}:${String(Math.floor(S.t % 60)).padStart(2, '0')}`, st = S.stat;
-    cover([S.won ? '唱完了' : '被围住了', '', `撑了 ${t}，打散 ${S.kills} 只，${S.lvl} 级`, `波打上去：甜 ${st.甜}  稳 ${st.稳}  软 ${st.软}  撞 ${st.撞}`, '', '点一下或 R 重来']); }
+    cover([S.won ? '唱完了' : '被围住了', '', `撑了 ${t}，打散 ${S.kills} 只，${S.lvl} 级`, `波打上去：甜 ${st.甜}  稳 ${st.稳}  软 ${st.软}  撞 ${st.撞}`, '', S.playing >= 0 ? `在放你这一局唱的：第 ${S.playing + 1} 段` : '空格：把你这一局唱的连起来听一遍（每段最后那一圈）', '点一下或 R 重来']); }
 }
 function cover(lines){ g.fillStyle = 'rgba(8,10,14,0.82)'; g.fillRect(0, 0, W, H); g.textAlign = 'center'; g.textBaseline = 'middle';
   lines.forEach((l, i) => { g.fillStyle = i === 0 ? '#fff' : '#bbc'; g.font = i === 0 ? 'bold 34px sans-serif' : '16px sans-serif'; g.fillText(l, CX, CY - 150 + i * 32); }); }
