@@ -41,7 +41,7 @@ module.exports = async (api) => {
           if (S.beatN !== lastB && S.beatN % 8 === 0){ lastB = S.beatN; bots[name](); }
           step(1/60);
         }
-        res.push({ t: Math.round(S.t), sec: S.sec+1, lvl: S.lvl, k: S.kills, won: S.won, st: S.stat });
+        res.push({ t: Math.round(S.t), sec: S.sec+1, lvl: S.lvl, k: S.kills, won: S.won, st: S.stat, lost: S.lost });
       }
       out[name] = res;
     }
@@ -52,6 +52,6 @@ module.exports = async (api) => {
   for (const [n, rs] of Object.entries(o)){
     const avg = Math.round(rs.reduce((a, x) => a + x.t, 0) / rs.length), won = rs.filter(x => x.won).length;
     const st = rs.reduce((a, x) => { for (const k in x.st) a[k] = (a[k]||0) + x.st[k]; return a; }, {});
-    console.log(n.padEnd(4), '平均撑', avg, '秒  赢', won + '/' + rs.length, ' 段', rs.map(x => x.sec).join(','), ' 甜稳软撞', st.甜, st.稳, st.软, st.撞);
+    console.log(n.padEnd(4), '平均撑', avg, '秒  赢', won + '/' + rs.length, ' 段', rs.map(x => x.sec).join(','), ' 甜稳软撞', st.甜, st.稳, st.软, st.撞, ' 丢声部', rs.reduce((a,x)=>a+(x.lost||0),0));
   }
 };

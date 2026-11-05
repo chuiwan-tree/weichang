@@ -66,6 +66,7 @@ const A = {
   spark(v){ if (!this.ok()) return; this.osc('sine', 1800 + Math.random()*600, 0.02*v, 0.08); },
   clash(){ if (!this.ok()) return; this.noise(0.22, 0.16, 'bandpass', 380, 2); this.osc('sawtooth', 70, 0.08, 0.15, 0.003, 600); },
   pop(pc){ if (!this.ok()) return; this.osc('sine', this.hz(84 + pc), 0.07, 0.45); this.osc('sine', this.hz(91 + pc), 0.035, 0.35, 0.005, 0, 0.04); },
+  lose(pc){ if (!this.ok()) return; const f = this.hz(72 + pc); this.osc('triangle', f, 0.18, 0.7, 0.005, 900); this.osc('triangle', f * 0.94, 0.14, 0.7, 0.005, 700); this.noise(0.08, 0.25, 'lowpass', 500); },
   hurt(){ if (!this.ok()) return; this.osc('sine', 55, 0.5, 0.35, 0.003); this.noise(0.15, 0.2, 'lowpass', 300); },
   preview(pc){ if (!this.ok()) return; this.osc('triangle', this.hz(72 + pc), 0.18, 0.5); },
 };
@@ -75,8 +76,8 @@ let S;
 function reset(seed){
   S = { t: 0, rng: rng32(seed ?? (Date.now() % 1e9)), beatN: 0, nextT: 0.05, sec: 0, chord: CHORDS[0],
     inner: Array(8).fill(null), outer: Array(8).fill(null), outerOpen: false,
-    hand: [0, 4, 7], sel: null, mons: [], arcs: [], fx: [], slotFlash: Array(8).fill(0),
-    hp: 6, maxhp: 6, xp: 0, lvl: 1, need: 2, kills: 0, offer: null, over: false, won: false,
+    hand: [0, 4, 7], sel: null, mons: [], arcs: [], fx: [], slotFlash: Array(8).fill(0), slotLost: Array(8).fill(0), lost: 0,
+    hp: 3, maxhp: 3, xp: 0, lvl: 1, need: 2, kills: 0, offer: null, over: false, won: false,
     spawnAcc: 0.6, started: false, paused: false, show: false, msg: '', msgT: 0, nid: 1, range: 290,
     stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [], secSong: [], playing: -1 };
 }
@@ -177,12 +178,16 @@ function step(dt){
     m.ang += m.w * dt; m.rage -= dt; m.sing -= dt; m.hitT -= dt;
     if (m.hp <= 0 && !m.dead){ m.dead = true; S.kills++; S.xp++;
       S.fx.push({ type: 'pop', x: CX + Math.cos(m.ang)*m.d, y: CY + Math.sin(m.ang)*m.d, t: 0.5, pc: m.pc }); A.pop(m.pc); }
-    else if (m.d < 22 && !m.dead){ m.dead = true; S.hp--; S.fx.push({ type: 'hurt', t: 0.4 }); A.hurt();
-      if (S.hp <= 0){ S.over = true; } }
+    else if (m.d < 22 && !m.dead){ m.dead = true;
+      // 撞到你身上：先吃掉它那个方向那一拍的音（外圈先、再内圈）；那一拍空着，才伤到你
+      const k = sectorOf(m.ang), ring = S.outer[k] != null ? 'outer' : (S.inner[k] != null ? 'inner' : null);
+      if (ring){ const pc = S[ring][k]; S[ring][k] = null; S.slotLost[k] = 1; S.lost++; A.lose(pc);
+        say('第 ' + (k + 1) + ' 拍的 ' + NAMES[pc] + ' 被它吃掉了：那一拍空了，你听得见', 3); }
+      else { S.hp--; S.fx.push({ type: 'hurt', t: 0.4 }); A.hurt(); if (S.hp <= 0){ S.over = true; } } }
   }
   S.mons = S.mons.filter(m => !m.dead);
   for (const f of S.fx) f.t -= dt; S.fx = S.fx.filter(f => f.t > 0);
-  for (let k = 0; k < 8; k++) S.slotFlash[k] = Math.max(0, S.slotFlash[k] - dt * 4);
+  for (let k = 0; k < 8; k++){ S.slotFlash[k] = Math.max(0, S.slotFlash[k] - dt * 4); S.slotLost[k] = Math.max(0, S.slotLost[k] - dt * 0.8); }
   if (S.msgT > 0) S.msgT -= dt;
   // 升级
   if (S.xp >= S.need && !S.over){
@@ -302,6 +307,7 @@ function draw(){
     const a0 = angOf(k) - Math.PI / 8 + 0.03, a1 = angOf(k) + Math.PI / 8 - 0.03, pc = S[ring][k];
     annular(r0, r1, a0, a1);
     g.fillStyle = pc == null ? 'rgba(255,255,255,0.05)' : noteColor(pc, 35 + S.slotFlash[k] * 30, 0.9); g.fill();
+    if (pc == null && S.slotLost[k] > 0){ g.fillStyle = `rgba(200,40,40,${S.slotLost[k] * 0.55})`; g.fill(); }
     g.strokeStyle = S.sel != null ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)'; g.lineWidth = 1; g.stroke();
     if (pc != null){ const rm = (r0 + r1) / 2, a = angOf(k); g.fillStyle = '#fff'; g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(NAMES[pc], CX + Math.cos(a) * rm, CY + Math.sin(a) * rm); }
