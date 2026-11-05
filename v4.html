@@ -77,16 +77,17 @@ const A = {
   bass(r){ if (!this.ok()) return; this.osc('sine', this.hz(36 + r), 0.28, 0.6, 0.01); this.osc('triangle', this.hz(48 + r), 0.05, 0.3); },
   tick(acc){ if (!this.ok()) return; this.noise(acc ? 0.05 : 0.02, 0.03, 'highpass', 7000); },
   spark(v){ if (!this.ok()) return; this.osc('sine', 1800 + Math.random()*600, 0.02*v, 0.08); },
-  clash(){ if (!this.ok()) return; this.noise(0.22, 0.16, 'bandpass', 380, 2); this.osc('sawtooth', 70, 0.12, 0.22, 0.003, 900); this.osc('sawtooth', 74, 0.1, 0.22, 0.003, 900); },
-  pop(pc){ if (!this.ok()) return; this.osc('sine', this.hz(84 + pc), 0.07, 0.45); this.osc('sine', this.hz(91 + pc), 0.035, 0.35, 0.005, 0, 0.04); },
+  clash(){ if (!this.ok()) return; this.noise(0.28, 0.12, 'bandpass', 1800, 0.8); this.noise(0.18, 0.2, 'lowpass', 300); },   // 撞：一声噪的咔嚓，没有音高，跟怪的锯齿分开
+  pop(pc){ if (!this.ok()) return; const L = (S.nextT - S.t) > 0.03 ? S.nextT - S.t : 0;   // 打散的那一声等到下一拍，跟下一个音一起响
+    this.osc('sine', this.hz(72 + pc), 0.05, 0.5, 0.005, 0, L); this.osc('sine', this.hz(79 + pc), 0.025, 0.4, 0.005, 0, L); },
   lose(pc){ if (!this.ok()) return; const f = this.hz(72 + pc); this.osc('triangle', f, 0.18, 0.7, 0.005, 900); this.osc('triangle', f * 0.94, 0.14, 0.7, 0.005, 700); this.noise(0.08, 0.25, 'lowpass', 500); },
   hurt(){ if (!this.ok()) return; this.osc('sine', 55, 0.5, 0.35, 0.003); this.noise(0.15, 0.2, 'lowpass', 300); },
   sus(pc){ if (!this.ok()) return; this.osc('sine', this.hz(72 + pc), 0.1, 0.5, 0.04); },
   preview(pc){ if (!this.ok()) return; this.osc('sine', this.hz(72 + pc), 0.07, 0.35, 0.02, 600); },   // 预听：闷、轻，像隔着墙
   click(up){ if (!this.ok()) return; this.noise(0.12, 0.025, 'bandpass', up ? 3200 : 2200, 6); },   // 点击：通用的"咔"
-  sweet(){ if (!this.ok()) return; this.osc('sine', 2093, 0.09, 0.35); this.osc('sine', 2637, 0.06, 0.3, 0.005, 0, 0.05); this.osc('triangle', 3136, 0.03, 0.25, 0.005, 0, 0.1); },
-  steady(){ if (!this.ok()) return; this.osc('sine', 180, 0.22, 0.14, 0.003); this.noise(0.05, 0.06, 'lowpass', 900); },
-  puff(){ if (!this.ok()) return; this.noise(0.07, 0.09, 'lowpass', 1500); },
+  sweet(pc){ if (!this.ok()) return; const f = this.hz(84 + (pc ?? 0)), L = this.lag || 0; this.osc('sine', f / 2, 0.05, 0.25, 0.004, 0, L); this.osc('sine', f, 0.012, 0.18, 0.004, 0, L); },   // 像木琴：跟打中的那个音同音高、短、轻   // 甜：跟着打中的那个音，高八度，轻，不另起音高
+  steady(){ if (!this.ok()) return; this.osc('sine', 180, 0.22, 0.14, 0.003, 0, this.lag || 0); },
+  puff(){ if (!this.ok()) return; this.noise(0.12, 0.1, 'lowpass', 1200); },
 };
 
 // ---------------- 局面 ----------------
@@ -139,7 +140,11 @@ function fireBeat(n){
     let self = 1; for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (value(all[i], all[j]) < 0) self = 0.5;
     if (!notes.length) self *= 0.6;
     const ab = S.innerAb[k];
-    S.arcs.push({ k, ang: angOf(k), r: 24, max: S.range, notes: all, hit: new Set(), blocks: [], self, abil: ab, heard: {}, half: ab === '宽' ? HALF * 1.5 : HALF, sus: sus != null });
+    const arcObj = { k, ang: angOf(k), r: 24, max: S.range, notes: all, hit: new Set(), blocks: [], self, abil: ab, heard: {}, half: ab === '宽' ? HALF * 1.5 : HALF, sus: sus != null };
+    S.arcs.push(arcObj);
+    // 这一拍会打中什么，就在这一拍、跟你的音同时响出来：耳朵听到的就是这一下会怎样
+    { const ms = S.mons.filter(m => sectorOf(m.ang) === k && m.d < S.range + 20); let best = -9; for (const m of ms){ let v = 0; for (const pc of all) v = Math.max(v, hitVal(pc, m)); best = Math.max(best, v); }
+      A.lag = 0; if (ms.length){ if (best >= 2){ A.sweet(all[0]); arcObj.heard['甜'] = 1; arcObj.fb = 1; } else if (best >= 0.5){ A.steady(); arcObj.heard['稳'] = 1; arcObj.fb = 1; } } }
     S.slotFlash[k] = 1;
   }
 }
@@ -179,9 +184,11 @@ function hitMon(a, m){
   }
 }
 
-function hear(a, kd){   // 一道波每种反馈只响一次
+function hear(a, kd){   // 一道波每种反馈只响一次；甜、稳的声音等到下一个半拍再响，跟旋律对齐，不在空拍里单独啾一下
   if (a.heard[kd]) return; a.heard[kd] = 1;
-  if (kd === '甜') A.sweet(); else if (kd === '稳') A.steady(); else if (kd === '没动') A.puff(); else A.clash(); }
+  if ((kd === '甜' || kd === '稳') && a.fb) return;   // 这一拍已经在音头上响过了，波走到时不再响一次
+  A.lag = 0;
+  if (kd === '甜') A.sweet(a.notes[0]); else if (kd === '稳') A.steady(); else if (kd === '没动') A.puff(); else A.clash(); }
 function detune(m){   // 走调：挨一下，自己的音往上走一个音阶
   const i = SCALE.indexOf(m.pc); m.pc = SCALE[((i < 0 ? 0 : i) + 1) % 7]; }
 function echoAt(x, y, pc, from){   // 死掉的怪用自己的音唱一圈，打旁边的
