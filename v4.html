@@ -317,7 +317,7 @@ window.addEventListener('resize', fit); fit();
 const toXY = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / cv._s, (e.clientY - r.top) / cv._s]; };
 cv.addEventListener('pointerdown', e => { const [x, y] = toXY(e); click(x, y, e.button === 2); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('pointermove', e => { const [x, y] = toXY(e);
+cv.addEventListener('pointermove', e => { const [x, y] = toXY(e); { const ss = slotAt(x, y); S.hoverSlot = ss && ss.ring === 'inner' ? ss.k : -1; }
   if (S.offer){ const i = offerAt(x, y); if (i !== S.offerHover){ S.offerHover = i; if (i >= 0){ const o = S.offer[i]; if (S.offerKind === 'note') A.preview(o); else if (o.swap != null) A.preview(o.swap); } } return; }
   // 手里拿着一个音、指到一格上：把它跟那个方向最近的那只怪一起轻轻唱一下，先听再放
   const s = S.sel != null ? slotAt(x, y) : null, key = s ? s.k : -1;
@@ -360,8 +360,14 @@ function draw(){
     }
     g.setLineDash([]);
   }
+  // 拿着一个音、或者指着圈上一个音：每只怪身上亮出它跟这个音合不合（金=甜，白=稳，灰=没动，红=撞）
+  const focus = S.sel != null ? S.hand[S.sel] : (S.hoverSlot >= 0 && S.inner[S.hoverSlot] != null ? S.inner[S.hoverSlot] : null);
   // 怪
   for (const m of S.mons){
+    if (focus != null && m.d < 470){ const fv = hitVal(focus, m), fx = CX + Math.cos(m.ang) * m.d, fy = CY + Math.sin(m.ang) * m.d;
+      const [fc, fw] = fv >= 2 ? ['255,210,90', '甜'] : fv >= 0.5 ? ['230,240,255', '稳'] : fv >= 0 ? ['130,130,140', '没动'] : ['255,80,80', '撞'];
+      g.beginPath(); g.arc(fx, fy, m.rad + 7, 0, Math.PI * 2); g.strokeStyle = `rgba(${fc},0.9)`; g.lineWidth = fv >= 2 ? 3 : 2; g.stroke();
+      g.fillStyle = `rgba(${fc},0.95)`; g.font = 'bold 11px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(fw, fx + m.rad + 14, fy); }
     const x = CX + Math.cos(m.ang) * m.d, y = CY + Math.sin(m.ang) * m.d;
     if (m.sing > 0){ g.beginPath(); g.arc(x, y, m.rad + 4 + (0.25 - m.sing) * 30, 0, Math.PI * 2); g.strokeStyle = `rgba(220,220,255,${m.sing * 1.6})`; g.lineWidth = 1.5; g.stroke(); }
     g.beginPath(); g.arc(x, y, m.rad, 0, Math.PI * 2);
@@ -411,7 +417,7 @@ function draw(){
   g.beginPath(); g.arc(CX, CY, 16, 0, Math.PI * 2); g.fillStyle = '#eef'; g.fill();
   // 手里的音
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '12px sans-serif'; g.fillText('手里的音：点一个，指到格子上先听听跟那边的怪合不合，再点下去放；点格子拿回来，右键收回', CX, HAND_Y - 40);
+  g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '12px sans-serif'; g.fillText('点一个音（手里的、圈上的都行），场上每只怪会亮出跟它合不合：金=甜，白=稳，灰=没动，红=撞；再点一格放下', CX, HAND_Y - 40);
   S.hand.forEach((pc, i) => { const p = handPos(i);
     g.beginPath(); g.arc(p.x, p.y, 21, 0, Math.PI * 2); g.fillStyle = noteColor(pc, 40); g.fill();
     if (S.sel === i){ g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); }
