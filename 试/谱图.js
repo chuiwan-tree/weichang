@@ -11,7 +11,7 @@ module.exports = async (p) => {
         for (const k of order){ if (!toks.length) break; let bi = 0, bv = -99; toks.forEach((pc, i) => { let v = fitAt(k, pc); const al = S.allies[k]; if (al && value(pc, al.pc) < 0) v -= 3; if (v > bv){ bv = v; bi = i; } }); S[ring][k] = toks.splice(bi,1)[0]; } }
       S.hand = toks; }
     let lastB = -1;
-    for (let i = 0; i < 60*400 && !S.over; i++){
+    for (let i = 0; i < 60*400 && !S.over && S.sec < ${process.env.STOP || 99}; i++){
       if (S.offer){ S.hand.push(S.offer[0]); S.offer = null; }
       if (S.beatN % 8 === 0 && S.beatN !== lastB){ lastB = S.beatN; place(); for (let k = 0; k < 8; k++) if (S.allies[k] && allyDrag(S.allies[k].pc)) release(k); }
       step(1/60); }
