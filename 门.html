@@ -141,7 +141,7 @@ function fireBeat(n){
   if (k === 7 && S.turnMode) S.waitNext = true;
   if (k === 7 && loop % SECTION_LOOPS === SECTION_LOOPS - 1 && sec + 1 < TOTAL_SECTIONS) openDoor();
   const al = S.allies[k];
-  if (al){ al.st = allyState(al.pc); al.drag = al.st === '撞'; A.ally(al.pc, al.drag, al.st === '闲'); al.sing = 0.3; }
+  if (al){ al.st = allyState(al.pc); if (window.NODRAG && al.st === '撞') al.st = '闲'; al.drag = al.st === '撞'; A.ally(al.pc, al.drag, al.st === '闲'); al.sing = 0.3; }
   const alW = al && al.st !== '闲' ? al : null;
   if (notes.length || alW){
     notes.forEach(pc => A.you(pc, notes.length));
@@ -149,7 +149,7 @@ function fireBeat(n){
     let self = 1; for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (value(all[i], all[j]) < 0) self = 0.5;
     if (!notes.length) self *= 0.7;   // 只有它一个在唱，弱一点
     notes = all;
-    const arcObj = { k, ang: angOf(k), r: 24, max: S.range, notes, hit: new Set(), blocks: [], self, allyPc: alW ? alW.pc : null, allyW: alW ? 1 + 0.25 * (alW.lv || 0) * VET() : 1 }; S.arcs.push(arcObj);
+    const arcObj = { k, ang: angOf(k), r: 24, max: S.range, notes, hit: new Set(), blocks: [], self, allyPc: alW ? alW.pc : null, allyW: alW ? 1 + (window.VETK || 0.25) * (alW.lv || 0) * VET() : 1 }; S.arcs.push(arcObj);
     // 这一拍会打中什么，就在这一拍跟你的音一起响一声，波走到的时候不再另响（v4 18:00 那一条，空拍里不再冒碎音）
     { const ms = S.mons.filter(m => sectorOf(m.ang) === k && m.d < S.range + 20); let best = -9; for (const m of ms) for (const pc of notes) best = Math.max(best, value(pc, m.pc));
       if (best >= 1){ A.spark(best >= 2 ? 2 : 1, notes[0]); } arcObj.fb = 1; }
@@ -217,7 +217,7 @@ function step(dt){
     m.d += (m.kb * 7 - sp) * dt; m.kb *= Math.exp(-7 * dt);
     m.ang += m.w * dt; m.rage -= dt; m.sing -= dt; m.hitT -= dt;
     const mk = sectorOf(m.ang);
-    if (m.hp <= 0 && !m.dead && m.last === '甜' && (m.sw || 0) >= (S.recruits === 0 ? 1 : 2) &&   /* 第一个声部来得快一点：开头不用一个人唱那么久 */ !S.allies[mk] && !window.NO_RECRUIT && S.allies.filter(Boolean).length < (window.MAXA_T || S.maxa)){
+    if (m.hp <= 0 && !m.dead && m.last === '甜' && (m.sw || 0) >= (S.recruits === 0 ? 1 : (window.SW || 2)) &&   /* 第一个声部来得快一点：开头不用一个人唱那么久 */ !S.allies[mk] && !window.NO_RECRUIT && S.allies.filter(Boolean).length < (window.MAXA_T || S.maxa)){
       m.dead = true; S.kills++; S.xp++; S.recruits++;
       S.allies[mk] = { pc: m.pc, drag: allyDrag(m.pc), sing: 0, born: S.t };
       S.fx.push({ type: 'join', fx: CX + Math.cos(m.ang)*m.d, fy: CY + Math.sin(m.ang)*m.d, k: mk, t: 0.6, pc: m.pc }); A.join(m.pc);

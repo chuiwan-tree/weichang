@@ -7,7 +7,7 @@
 module.exports = async (api) => {
   const N = +(process.env.N || 16);
   const r = await api.eval(`(() => {
-    window.TEST = true; window.HARD = ${process.env.HARD || 1}; window.VET = ${process.env.VET ?? 1};
+    window.TEST = true; window.HARD = ${process.env.HARD || 1}; window.VET = ${process.env.VET ?? 1}; window.SW = ${process.env.SW || 2}; window.VETK = ${process.env.VETK || 0.25}; window.NODRAG = ${process.env.NODRAG || 0};
     const threat = () => { const t = Array(8).fill(0); for (const m of S.mons) if (m.d < 460) t[sectorOf(m.ang)] += 1 / Math.max(m.d, 30); return t; };
     const fitAt = (k, pc) => S.mons.filter(m => sectorOf(m.ang) === k && m.d < 460).reduce((a, m) => a + value(pc, m.pc), 0);
     function place(pick){
@@ -15,7 +15,7 @@ module.exports = async (api) => {
       const t = threat(); const order = [0,1,2,3,4,5,6,7].sort((a,b) => t[b]-t[a]);
       for (const k of order){ if (!toks.length) break; const i = pick(k, toks); S.inner[k] = toks.splice(i,1)[0]; } }
     const know = (k, toks) => { let bi = 0, bv = -99; toks.forEach((pc, i) => { const al = S.allies[k]; let v = fitAt(k, pc); if (al && value(pc, al.pc) < 0) v -= 3; if (v > bv){ bv = v; bi = i; } }); return bi; };
-    const rel = () => { for (let k = 0; k < 8; k++) if (S.allies[k] && allyDrag(S.allies[k].pc)) release(k); };
+    const rel = () => { if (window.NODRAG) return; for (let k = 0; k < 8; k++) if (S.allies[k] && allyDrag(S.allies[k].pc)) release(k); };
     const choir = d => { let s = 0; for (const a of S.allies) if (a){ const st = stateIn(a.pc, d.ch); s += st === '合' ? 1 + 0.3*(a.lv||0) : st === '撞' ? -1.5 - 0.3*(a.lv||0) : 0; } return s; };
     const doors = {
       随手: () => 0,
