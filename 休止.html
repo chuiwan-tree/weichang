@@ -467,7 +467,12 @@ function draw(){
     S.door.forEach((d, i) => { const p = doorPos(i), hv = S.doorHover === i;
       g.fillStyle = hv ? '#2a3040' : '#1a1e28'; g.fillRect(p.x - 125, p.y - 145, 250, 290); g.strokeStyle = hv ? '#fff' : '#556'; g.strokeRect(p.x - 125, p.y - 145, 250, 290);
       g.fillStyle = '#fff'; g.font = 'bold 44px sans-serif'; g.fillText(d.ch.n, p.x, p.y - 95);
-      if (S.sec + 1 === REST_SEC){ g.fillStyle = '#f66'; g.font = 'bold 15px sans-serif'; g.fillText('下一段开头休止 ' + REST_LOOPS + ' 圈：你不唱，只有绿的替你唱', p.x, p.y - 128); }
+      if (S.sec + 1 === REST_SEC){ g.fillStyle = '#f66'; g.font = 'bold 15px sans-serif'; g.fillText('下一段开头休止 ' + REST_LOOPS + ' 圈：你不唱，只有绿的替你唱', p.x, p.y - 128);
+        // 乙 04:00：休止前先亮出休止里要来的怪唱什么，前一段收谁放谁才是真准备
+        g.fillStyle = '#fc8'; g.font = '14px sans-serif'; g.fillText('休止里新来的怪唱 ' + d.ch.p.map(x => NAMES[x]).join(' '), p.x, p.y - 72);
+        const al2 = S.allies.map((a, k) => a ? { a, k } : null).filter(Boolean);
+        al2.forEach((o, j) => { const cx = p.x + (j - (al2.length - 1) / 2) * 52, best = Math.max(...d.ch.p.map(m => value(o.a.pc, m)));
+          g.fillStyle = best >= 2 ? '#8f8' : best >= 1 ? '#cc8' : '#f88'; g.font = '12px sans-serif'; g.fillText(best >= 2 ? '打得甜' : best >= 1 ? '打得动' : '打不动', cx, p.y + 50); }); }
       g.font = '15px sans-serif'; g.fillStyle = '#fc8'; g.fillText(d.rw.t, p.x, p.y - 50);
       const al = S.allies.map((a, k) => a ? { a, k } : null).filter(Boolean);
       al.forEach((o, j) => { const st = stateIn(o.a.pc, d.ch), cx = p.x + (j - (al.length - 1) / 2) * 52, cy = p.y + 20;
