@@ -99,7 +99,7 @@ function reset(seed){
     hand: [0, 4, 7], sel: null, turnMode: !!window.TURN_MODE, waiting: false, power: 1, mons: [], arcs: [], fx: [], slotFlash: Array(8).fill(0), slotLost: Array(8).fill(0), lost: 0,
     hp: 3, maxhp: 3, xp: 0, lvl: 1, need: 2, kills: 0, offer: null, over: false, won: false,
     spawnAcc: 0.6, started: false, paused: false, show: false, msg: '', msgT: 0, nid: 1, range: 290,
-    stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [], secSong: [], playing: -1, allies: Array(8).fill(null), recruits: 0, released: 0, allyLost: 0, aid: 0 };
+    stat: { 甜: 0, 稳: 0, 软: 0, 撞: 0 }, song: [], secSong: [], playing: -1, allies: Array(8).fill(null), recruits: 0, released: 0, allyLost: 0, aid: 0, trace: {} };
 }
 // 每个声部自己的唱法（甲 19:58）：自己那一拍照唱；另外挑一两拍（离自己 1–7 拍），哼一个跟自己隔三度、五度或者同音的音。
 // 同一个音收来两个，唱法也不一样，图上一眼分得出谁是谁。
@@ -140,6 +140,7 @@ function fireBeat(n){
   if (k === 7 && S.turnMode) S.waitNext = true;
   for (let j = 0; j < 8; j++){ const b = S.allies[j]; if (!b || !b.mo || b.st === '撞') continue;
     for (const o of b.mo) if ((j + o.d) % 8 === k){ A.ally(((b.pc + o.iv) % 12 + 12) % 12, false, true); b.sing = 0.2; } }   // 花腔一律轻哼：自己那一拍才是正经唱（甲 20:04，看频谱低处糊成一片）
+  for (let j = 0; j < 8; j++){ const b = S.allies[j]; if (!b) continue; const tr = S.trace[b.id] || (S.trace[b.id] = { pc: b.pc, secs: {} }); tr.secs[sec] = allyState(b.pc); }   // 甲 20:16：谱上要留下没唱满一段的
   const al = S.allies[k];
   if (al){ al.st = allyState(al.pc); al.drag = al.st === '撞'; A.ally(al.pc, al.drag, al.st === '闲'); al.sing = 0.3; }
   const alW = al && al.st !== '闲' ? al : null;
@@ -431,6 +432,8 @@ function drawScore(){
   const secs = S.secSong, n = TOTAL_SECTIONS; if (!secs.some(Boolean)) return;
   const ids = [], info = {};
   secs.forEach(sec => sec && sec.who && sec.who.forEach(w => { if (w && !(w.id in info)){ ids.push(w.id); info[w.id] = w.pc; } }));
+  for (const id of Object.keys(S.trace || {}).map(Number).sort((a, b) => a - b)) if (!(id in info)){ ids.push(id); info[id] = S.trace[id].pc; }   // 没唱满一段就走了的
+  ids.sort((a, b) => a - b);
   const x0 = 110, x1 = W - 40, cw = (x1 - x0) / n, rows = 1 + ids.length, rh = Math.min(30, 300 / Math.max(rows, 1)), y0 = 500;
   g.textBaseline = 'middle';
   if (S.playing >= 0){ g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(x0 + S.playing * cw, y0 - 22, cw, rows * rh + 26); }
@@ -443,7 +446,9 @@ function drawScore(){
     g.textAlign = 'right'; g.font = 'bold 13px sans-serif'; g.fillStyle = noteColor(info[id], 65); g.fillText(NAMES[info[id]], x0 - 12, y + rh / 2);
     let prev = false;
     secs.forEach((sec, i) => { const w = sec && sec.who && sec.who.find(w => w && w.id === id);
-      if (!w){ prev = false; return; }
+      if (!w){ const tr = S.trace && S.trace[id];
+        if (tr && tr.secs[i] != null){ g.fillStyle = noteColor(tr.pc, 60, 0.6); g.fillRect(x0 + i * cw + 2, y + rh / 2 - 2, (cw - 4) * 0.35, 4); }   // 这一段来过、没留到段尾：一道短的
+        prev = false; return; }
       const bx = x0 + i * cw + (prev ? 0 : 2), bw = cw - (prev ? 0 : 2);
       if (w.st === '撞'){ g.strokeStyle = '#ff5544'; g.lineWidth = 2; g.strokeRect(bx + 1, y + 6, bw - 2, rh - 12);
         g.beginPath(); g.moveTo(bx + 3, y + 7); g.lineTo(bx + bw - 3, y + rh - 7); g.moveTo(bx + bw - 3, y + 7); g.lineTo(bx + 3, y + rh - 7); g.stroke(); }
