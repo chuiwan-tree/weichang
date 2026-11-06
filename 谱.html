@@ -380,7 +380,7 @@ function draw(){
     if (a.st === '闲') g.globalAlpha = 0.45;
     g.lineWidth = a.drag ? 3 : 1.5; g.strokeStyle = a.drag ? `rgba(255,70,70,${0.6 + 0.4 * Math.sin(S.t * 8)})` : 'rgba(255,255,255,0.8)'; g.stroke();
     g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(NAMES[a.pc], p.x, p.y); g.globalAlpha = 1;
-    if (a.st === '闲'){ g.fillStyle = '#99a'; g.font = '11px sans-serif'; g.fillText('这个和弦里歇着', p.x, p.y + 24); }
+    if (a.st === '闲' && !S.over){ g.fillStyle = '#99a'; g.font = '11px sans-serif'; g.fillText('这个和弦里歇着', p.x, p.y + 24); }
     if (a.drag){ g.fillStyle = '#f88'; g.font = '11px sans-serif'; g.fillText('跟和弦撞了 · 点它放走', p.x, p.y + 24); } }
   { const n = S.allies.filter(Boolean).length; g.textAlign = 'left'; g.fillStyle = '#ccd'; g.font = '14px sans-serif'; g.fillText('合唱 ' + n + '/' + MAXA, 20, 86); }
   for (const f of S.fx){
