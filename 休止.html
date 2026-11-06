@@ -147,7 +147,7 @@ function fireBeat(n){
   if (k === 7 && S.turnMode) S.waitNext = true;
   if (k === 7 && loop % SECTION_LOOPS === SECTION_LOOPS - 1 && sec + 1 < TOTAL_SECTIONS) openDoor();
   const al = S.allies[k];
-  if (al){ al.st = allyState(al.pc); if (window.NODRAG && al.st === '撞') al.st = '闲'; al.drag = al.st === '撞'; A.ally(al.pc, al.drag, al.st === '闲'); al.sing = 0.3; }
+  if (al){ al.st = (al.quiet && n < al.quiet) ? '闲' : allyState(al.pc); if (window.NODRAG && al.st === '撞') al.st = '闲'; al.drag = al.st === '撞'; A.ally(al.pc, al.drag, al.st === '闲'); al.sing = 0.3; }
   const alW = al && al.st !== '闲' ? al : null;
   if (notes.length || alW){
     notes.forEach(pc => A.you(pc, notes.length));
@@ -294,7 +294,10 @@ function offerAt(x, y){ if (!S.offer) return -1; for (let i = 0; i < 3; i++){ co
 
 function allyPos(k){ const a = angOf(k); return { x: CX + Math.cos(a) * ALLY_R, y: CY + Math.sin(a) * ALLY_R }; }
 function allyAt(x, y){ for (let k = 0; k < 8; k++){ if (!S.allies[k]) continue; const p = allyPos(k); if (Math.hypot(x - p.x, y - p.y) < 20) return k; } return -1; }
-function moveAlly(a, b){ if (!S.allies[a] || S.allies[b]) return false; S.allies[b] = S.allies[a]; S.allies[a] = null; S.moved = (S.moved || 0) + 1;
+// 丙 03:47 打了一局说太松：一圈只许挪一个；挪过去到下一圈开头前只哼不唱（得早一圈挪）
+function moveAlly(a, b){ if (!S.allies[a] || S.allies[b]) return false; const loop = Math.floor(S.beatN / 8);
+  if (S.movedLoop === loop){ say('这一圈已经挪过一个了', 1.5); return false; }
+  S.movedLoop = loop; S.allies[b] = S.allies[a]; S.allies[a] = null; S.allies[b].quiet = (loop + 1) * 8; S.moved = (S.moved || 0) + 1;
   say(NAMES[S.allies[b].pc] + ' 从第 ' + (a + 1) + ' 拍挪到第 ' + (b + 1) + ' 拍', 2); return true; }
 function release(k){ const a = S.allies[k]; if (!a) return; S.allies[k] = null; S.released++; A.leave(a.pc);
   const p = allyPos(k); S.fx.push({ type: 'leave', x: p.x, y: p.y, t: 0.8, pc: a.pc, ang: angOf(k) });
